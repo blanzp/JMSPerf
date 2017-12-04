@@ -1,13 +1,17 @@
 package com.blanzp.perftest;
 
+import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jms.connection.CachingConnectionFactory;
+import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import javax.jms.*;
 import java.util.Date;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -21,53 +25,69 @@ public class PerfTestController {
 
     @Autowired
     private PerfService perfService;
-
-    private static final String template = "Hello, %s!";
-    private final AtomicLong counter = new AtomicLong();
+    @Autowired
+    private Destination defaultDestination;
 
     @RequestMapping(method = RequestMethod.GET)
     public @ResponseBody
     PerfTestResult runPerf(
-            @RequestParam(value = "count", required = false, defaultValue = "10") int count)
-            throws InterruptedException {
+            @RequestParam(value = "count", required = false, defaultValue = "10") int count,
+            @RequestParam(value = "instance", required = false, defaultValue = "tcp://localhost:61616") String instance,
+            @RequestParam(value = "batch", required = false, defaultValue = "false") boolean batch,
+            @RequestParam(value = "batch_size", required = false, defaultValue = "10") int batch_size)
+            throws InterruptedException, JMSException {
 
-        int testCount = count;
+        ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("tcp://localhost:61616");
+//        ConnectionFactory cf = new CachingConnectionFactory(acf);
+        Connection conn = cf.createConnection();
+        Session session = conn.createSession(
+                batch,
+                Session.AUTO_ACKNOWLEDGE);
+
+        conn.start();
+        MessageProducer producer = session.createProducer(this.defaultDestination);
+
+        //TestResult result;
 
         Date startTime = new Date();
-        Future<String> result = perfService.sendPayload(testCount);
-        while (!(result.isDone())) {
-            Thread.sleep(1); // 10-millisecond pause between each check
-//            System.out.println("Waiting for Long Process...");
+        Future<TestResult> futureResult = perfService.sendPayload(producer, session, count, batch, batch_size);
+        while (!(futureResult.isDone())) {
+            Thread.sleep(10); // 10-millisecond pause between each check
         }
-        String pubResp= "";
         try {
-            pubResp = result.get();
+            TestResult result = futureResult.get();
+            LOGGER.debug("Produced " + result.count + " of " + result.expectedCount);
         } catch (ExecutionException e) {
-            System.out.println("Failed to produce messages" + e);
-            return new PerfTestResult(0, "Failed to produce: " + e.getMessage(), 0);
+            LOGGER.debug("Failed to produce messages" + e);
+            return new PerfTestResult(0, "Failed to produce: " + e.getMessage(), 0, batch, batch_size);
         }
 
-        System.out.println("Done producing messages");
-        Future<String> s = perfService.consumePayLoad(testCount);
-        while (!(s.isDone())) {
-            Thread.sleep(1); // 10-millisecond pause between each check
-//            System.out.println("Waiting for reading...");
-        }
-        System.out.println("Done consuming messages");
+        LOGGER.debug("Done producing messages");
 
-        String readResult = "";
+        MessageConsumer consumer = session.createConsumer(this.defaultDestination);
+
+
+        futureResult = perfService.consumePayLoad(consumer, session, count, batch, batch_size);
+
+        while (!(futureResult.isDone())) {
+            Thread.sleep(1000); // 10-millisecond pause between each check
+        }
+        LOGGER.debug("Done consuming messages");
 
         try {
-            readResult = s.get();
+            TestResult result = futureResult.get();
+            LOGGER.debug("Consumed " + result.count + " of " + result.expectedCount);
         } catch (ExecutionException e) {
-            System.out.println("Failed to read response messages" + e);
-            return new PerfTestResult(0, "Failed to consume: " + e.getMessage(), 0);
+            LOGGER.debug("Failed to read response messages" + e);
+            return new PerfTestResult(0, "Failed to consume: " + e.getMessage(), 0, batch, batch_size);
         }
 
         Date endTime = new Date();
 
         long testTimeInMillis = endTime.getTime() - startTime.getTime();
-        return new PerfTestResult(count, "OK", testTimeInMillis);
+
+        conn.stop();
+        return new PerfTestResult(count, "OK", testTimeInMillis, batch, batch_size);
     }
 
 }
