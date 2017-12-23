@@ -1,5 +1,7 @@
 package com.blanzp.perftest;
 
+import com.ibm.mq.MQException;
+
 import java.util.Date;
 
 /**
@@ -15,8 +17,11 @@ public class PerfTestResult {
     public String testDateString;
     public boolean batch;
     public int batch_size;
+    public String instance;
+    public MQError mqError;
 
-    public PerfTestResult(int msgCount, String message, long executionInMillis, boolean batch, int batch_size ){
+    public PerfTestResult(int msgCount, String message, long executionInMillis, boolean batch, int batch_size, String instance,
+                          MQException e){
         this.msgCount = msgCount;
         this.message = message;
         this.executionInMillis = executionInMillis;
@@ -25,5 +30,7 @@ public class PerfTestResult {
         this.testDateString = this.testDate.toString();
         this.batch = batch;
         this.batch_size = batch_size;
+        this.instance = instance;
+        this.mqError = new MQError(e);
     }
 }

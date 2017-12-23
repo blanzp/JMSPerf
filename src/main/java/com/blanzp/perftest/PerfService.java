@@ -28,8 +28,8 @@ public class PerfService {
         LOGGER.debug("Starting producer");
         for (int i = 0; i < sendCount; i++) {
 
-            if ( batch && i%batch_size == 0) {
-                LOGGER.debug("Committing producer at "+ i);
+            if (batch && i % batch_size == 0) {
+                LOGGER.debug("Committing producer at " + i);
                 session.commit();
             }
             message.setText("This is message " + (i + 1) + " from producer");
@@ -39,7 +39,7 @@ public class PerfService {
 
         }
         producer.send(session.createMessage());
-        if ( batch ) {
+        if (batch) {
             session.commit();
         }
 
@@ -69,7 +69,7 @@ public class PerfService {
                     LOGGER.debug("Found last message");
                     break;
                 }
-                if ( batch && i%batch_size == 0) {
+                if (batch && i % batch_size == 0) {
                     session.commit();
                     LOGGER.debug("Committing consumer at " + i);
                 }
@@ -81,7 +81,7 @@ public class PerfService {
             }
 
         }
-        if ( batch ) {
+        if (batch) {
             session.commit();
         }
         consumer.close();
